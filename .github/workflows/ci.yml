@@ -14,11 +14,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. Harbor 로그인
+      # 2. Harbor에 로그인
       - name: Log in to Harbor
-        run: |
-          echo "${{ secrets.HARBOR_PASSWORD }}" | docker login ${{ secrets.HARBOR_REGISTRY_URL }} \
-          --username ${{ secrets.HARBOR_USERNAME }} --password-stdin
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.HARBOR_REGISTRY_URL }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
 
       # 3. Docker 이미지 빌드 및 태깅
       - name: Build and tag Docker image
