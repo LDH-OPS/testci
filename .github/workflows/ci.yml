@@ -1,0 +1,34 @@
+name: Build and Push Docker Image to Harbor
+
+on:
+  push:
+    branches:
+      - main  # main 브랜치에 푸시될 때 실행
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. GitHub 리포지토리 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Harbor 로그인
+      - name: Log in to Harbor
+        run: |
+          echo "${{ secrets.HARBOR_PASSWORD }}" | docker login ${{ secrets.HARBOR_REGISTRY_URL }} \
+          --username ${{ secrets.HARBOR_USERNAME }} --password-stdin
+
+      # 3. Docker 이미지 빌드 및 태깅
+      - name: Build and tag Docker image
+        run: |
+          IMAGE_TAG=${{ secrets.HARBOR_REGISTRY_URL }}/my-project/my-image:${{ github.sha }}
+          docker build -t $IMAGE_TAG .
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      # 4. Docker 이미지 푸시
+      - name: Push Docker image to Harbor
+        run: |
+          docker push ${{ env.IMAGE_TAG }}
+
