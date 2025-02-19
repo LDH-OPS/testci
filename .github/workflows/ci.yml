@@ -46,4 +46,4 @@ jobs:
           # Docker 이미지 푸시
           docker push $IMAGE_TAG
           EOF
-   
+    
