@@ -19,7 +19,7 @@ jobs:
         env:
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}  # Harbor 비밀번호를 환경변수로 설정
         run: |
-          docker login -u admin -p "$HARBOR_PASSWORD" harbor.example.com
+          docker login -u admin -p "$HARBOR_PASSWORD" 192.168.2.184
           IMAGE_TAG=192.168.2.184/momo/citest:${{ github.run_number }}
           docker build -t $IMAGE_TAG .
           docker push $IMAGE_TAG
