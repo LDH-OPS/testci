@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to Harbor
+name: Build and Push Docker Image to Harbor via SSH
 
 on:
   push:
@@ -14,23 +14,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. Harbor에 로그인
-      - name: Log in to Harbor
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ secrets.HARBOR_REGISTRY_URL }}
-          username: ${{ secrets.HARBOR_USERNAME }}
-          password: ${{ secrets.HARBOR_PASSWORD }}
-
-      # 3. Docker 이미지 빌드 및 태깅
-      - name: Build and tag Docker image
+      # 2. SSH 설정
+      - name: Configure SSH
         run: |
-          IMAGE_TAG=${{ secrets.HARBOR_REGISTRY_URL }}/my-project/my-image:${{ github.sha }}
+          mkdir -p ~/.ssh/
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "Host my-local-server" >> ~/.ssh/config
+          echo "  HostName ${{ secrets.SSH_HOST }}" >> ~/.ssh/config
+          echo "  User ${{ secrets.SSH_USER }}" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/id_rsa" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+
+      # 3. SSH를 통해 로컬 서버에서 Docker 빌드 및 푸시 실행
+      - name: Build and Push Docker Image on Local Server
+        env:
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}  # Harbor 비밀번호를 환경변수로 설정
+        run: |
+          ssh kevin@192.168.56.101 << 'EOF'
+          cd /momo_test/testci  # 프로젝트 디렉토리로 이동 (필요 시 수정)
+          
+          # Harbor 로그인 (환경변수를 사용)
+          docker login -u admin -p "$HARBOR_PASSWORD" 192.168.2.184
+
+          # Docker 이미지 빌드 및 태깅
+          IMAGE_TAG=192.168.2.184/momo/my-image:${{ github.run_number }}
           docker build -t $IMAGE_TAG .
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+          
+          # Docker 이미지 푸시
+          docker push $IMAGE_TAG
+         
 
-      # 4. Docker 이미지 푸시
-      - name: Push Docker image to Harbor
-        run: |
-          docker push ${{ env.IMAGE_TAG }}
- 
