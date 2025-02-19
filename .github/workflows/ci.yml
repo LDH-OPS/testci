@@ -20,6 +20,8 @@ jobs:
           mkdir -p ~/.ssh/
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          
+          # SSH 설정 파일 작성
           echo "Host my-local-server" >> ~/.ssh/config
           echo "  HostName ${{ secrets.SSH_HOST }}" >> ~/.ssh/config
           echo "  User ${{ secrets.SSH_USER }}" >> ~/.ssh/config
@@ -31,7 +33,7 @@ jobs:
         env:
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}  # Harbor 비밀번호를 환경변수로 설정
         run: |
-          ssh kevin@192.168.56.101 << 'EOF'
+          ssh -T kevin@192.168.56.101 << 'EOF'
           cd /momo_test/testci  # 프로젝트 디렉토리로 이동 (필요 시 수정)
           
           # Harbor 로그인 (환경변수를 사용)
