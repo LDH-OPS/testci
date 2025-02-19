@@ -14,13 +14,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. Docker 로그인 및 이미지 빌드/푸시
+      # 2. 태그 자동 증가 (1.0, 1.1, 1.2 ...)
+      - name: Generate Incremental Tag
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          # 실행 횟수를 기반으로 태그 설정 (1.0, 1.1, 1.2 ...)
+          NEW_TAG="1.$RUN_NUMBER"
+          
+          echo "New Tag: $NEW_TAG"
+          echo "IMAGE_TAG=192.168.2.184/momo/citest:$NEW_TAG" >> $GITHUB_ENV
+
+      # 3. Docker 로그인 및 이미지 빌드/푸시
       - name: Build and Push Docker Image to Harbor
         env:
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}  # Harbor 비밀번호를 환경변수로 설정
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           docker login -u admin -p "$HARBOR_PASSWORD" 192.168.2.184
-          IMAGE_TAG=192.168.2.184/momo/citest:${{ github.run_number }}
           docker build -t $IMAGE_TAG .
           docker push $IMAGE_TAG
 
