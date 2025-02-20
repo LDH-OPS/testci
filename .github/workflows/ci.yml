@@ -3,18 +3,16 @@ name: Build and Push Docker Image to Harbor
 on:
   push:
     branches:
-      - main  # main 브랜치에 푸시될 때 실행
+      - main
 
 jobs:
   build-and-push:
-    runs-on: self-hosted  # Self-hosted Runner에서 실행
+    runs-on: self-hosted
 
     steps:
-      # 1. GitHub 리포지토리 체크아웃
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. 태그 자동 증가 (1.0, 1.1, 1.2 ...)
       - name: Generate Incremental Tag
         env:
           RUN_NUMBER: ${{ github.run_number }}
@@ -23,15 +21,13 @@ jobs:
           echo "New Tag: $NEW_TAG"
           echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
 
-      # 3. IMAGE_TAG 디버깅 (올바르게 설정되었는지 확인)
       - name: Debug IMAGE_TAG
         run: |
           echo "IMAGE_TAG is set to: $IMAGE_TAG"
 
-      # 4. Docker 로그인 및 이미지 빌드/푸시 (admin 계정 사용)
       - name: Build and Push Docker Image to Harbor
         env:
-          HARBOR_USERNAME: "admin"  # 관리자 계정 직접 사용
+          HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           docker login -u "$HARBOR_USERNAME" -p "$HARBOR_PASSWORD" 192.168.2.184
@@ -43,56 +39,36 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. Trivy 설치 (sudo -S 옵션 사용하여 비밀번호 자동 입력)
-      - name: Install Trivy
+      - name: Trigger Harbor Vulnerability Scan
         env:
-          RUNNER_PASSWORD: ${{ secrets.RUNNER_PASSWORD }}  # GitHub Secrets에서 비밀번호 가져오기
+          HARBOR_URL: "192.168.2.184"
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          echo "$RUNNER_PASSWORD" | sudo -S apt-get update
-          echo "$RUNNER_PASSWORD" | sudo -S apt-get install -y wget jq
+          curl -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
+
+      - name: Get Harbor Scan Results
+        env:
+          HARBOR_URL: "192.168.2.184"
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          sleep 10  # 스캔이 완료될 시간을 기다림
+          RESULT=$(curl -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -s "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
           
-          # Trivy 최신 버전 자동 다운로드
-          TRIVY_LATEST_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
-          wget https://github.com/aquasecurity/trivy/releases/download/$TRIVY_LATEST_VERSION/trivy_$(echo $TRIVY_LATEST_VERSION | sed 's/v//')_Linux-64bit.tar.gz
-          
-          tar -xvzf trivy_*.tar.gz
-          echo "$RUNNER_PASSWORD" | sudo -S mv trivy /usr/local/bin/
+          CRITICAL_COUNT=$(echo $RESULT | jq '[.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical] | add')
+          HIGH_COUNT=$(echo $RESULT | jq '[.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High] | add')
 
-      # 2. IMAGE_TAG 디버깅 (올바르게 설정되었는지 확인)
-      - name: Debug IMAGE_TAG
-        run: |
-          echo "IMAGE_TAG is set to: $IMAGE_TAG"
+          echo "Critical: $CRITICAL_COUNT, High: $HIGH_COUNT"
 
-      # 3. Trivy 취약점 검사 실행
-      - name: Run Trivy Scan
-        run: |
-          IMAGE_NAME=${{ env.IMAGE_TAG }}
-          echo "Scanning image: $IMAGE_NAME"
-          trivy image --format json --output trivy-report.json $IMAGE_NAME
-          cat trivy-report.json
-
-      # 4. 취약점 검사 결과 Slack 알림 전송
-      - name: Send Report to Slack
+      - name: Send Scan Report to Slack
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[] | select(.Severity == "HIGH")] | length' trivy-report.json)
-          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[] | select(.Severity == "CRITICAL")] | length' trivy-report.json)
-
-          MESSAGE="{
-            \"attachments\": [
-              {
-                \"color\": \"#ff0000\",
-                \"title\": \"🔍 Harbor Image Security Scan Report\",
-                \"fields\": [
-                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
-                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
-                ],
-                \"footer\": \"Security Bot\",
-                \"ts\": $(date +%s)
-              }
-            ]
-          }"
-
-          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
+          MESSAGE="Trivy Scan Results:\nCritical: $CRITICAL_COUNT\nHigh: $HIGH_COUNT"
+          curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"$MESSAGE\"}" $SLACK_WEBHOOK_URL
 
