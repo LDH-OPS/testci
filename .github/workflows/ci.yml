@@ -52,7 +52,7 @@ jobs:
 
   process-harbor-webhook:
     if: github.event_name == 'repository_dispatch'
-    runs-on: self-hosted  # 🔥 `needs: build-and-push` 제거 → 독립적으로 실행 가능
+    runs-on: self-hosted
 
     steps:
       - name: Extract Harbor Webhook Data
@@ -60,8 +60,8 @@ jobs:
           echo "Extracting data from Harbor Webhook payload..."
           cat $GITHUB_EVENT_PATH | jq '.'
           
-          IMAGE_NAME=$(jq -r '.event_data.resources[0].repository' $GITHUB_EVENT_PATH)
-          IMAGE_TAG=$(jq -r '.event_data.resources[0].tag' $GITHUB_EVENT_PATH)
+          IMAGE_NAME=$(jq -r '.client_payload.event_data.resources[0].repository' $GITHUB_EVENT_PATH)
+          IMAGE_TAG=$(jq -r '.client_payload.event_data.resources[0].tag' $GITHUB_EVENT_PATH)
           
           if [[ -z "$IMAGE_NAME" || "$IMAGE_NAME" == "null" || -z "$IMAGE_TAG" || "$IMAGE_TAG" == "null" ]]; then
             echo "ERROR: Could not extract image name or tag from Harbor Webhook"
