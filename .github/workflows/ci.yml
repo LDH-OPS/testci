@@ -20,6 +20,7 @@ jobs:
           NEW_TAG="1.$RUN_NUMBER"
           echo "New Tag: $NEW_TAG"
           echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV  # env에서 사용 가능하도록 추가
 
       - name: Debug IMAGE_TAG
         run: |
@@ -48,6 +49,31 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           curl -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
+          echo "Triggered scan for image: $IMAGE_TAG"
+
+      - name: Wait for Scan to Complete (Polling)
+        env:
+          HARBOR_URL: "192.168.2.184"
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          echo "Waiting for scan results..."
+          for i in {1..30}; do  # 최대 5분 (10초 x 30회) 동안 반복 체크
+            SCAN_STATUS=$(curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG" | jq -r '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
+            echo "Current scan status: $SCAN_STATUS"
+            
+            if [[ "$SCAN_STATUS" == "Success" ]]; then
+              echo "Scan completed successfully!"
+              break
+            elif [[ "$SCAN_STATUS" == "Error" ]]; then
+              echo "Scan failed!"
+              exit 1
+            fi
+            
+            sleep 10  # 10초 대기 후 다시 확인
+          done
 
       - name: Get Harbor Scan Results
         env:
@@ -57,18 +83,38 @@ jobs:
           IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          sleep 10  # 스캔이 완료될 시간을 기다림
-          RESULT=$(curl -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -s "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
+          RESULT=$(curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
           
-          CRITICAL_COUNT=$(echo $RESULT | jq '[.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical] | add')
-          HIGH_COUNT=$(echo $RESULT | jq '[.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High] | add')
+          CRITICAL_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
+          HIGH_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
 
-          echo "Critical: $CRITICAL_COUNT, High: $HIGH_COUNT"
+          echo "Critical vulnerabilities: $CRITICAL_COUNT"
+          echo "High vulnerabilities: $HIGH_COUNT"
+
+          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
+          echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
 
       - name: Send Scan Report to Slack
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          HARBOR_URL: "192.168.2.184"
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          MESSAGE="Trivy Scan Results:\nCritical: $CRITICAL_COUNT\nHigh: $HIGH_COUNT"
-          curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"$MESSAGE\"}" $SLACK_WEBHOOK_URL
+          MESSAGE="{
+            \"attachments\": [
+              {
+                \"color\": \"#ff0000\",
+                \"title\": \"🔍 Harbor Image Security Scan Report\",
+                \"fields\": [
+                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
+                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
+                ],
+                \"footer\": \"Harbor Trivy Scanner\",
+                \"ts\": $(date +%s)
+              }
+            ]
+          }"
+
+          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
 
