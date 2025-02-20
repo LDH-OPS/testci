@@ -1,11 +1,58 @@
-name: Harbor Webhook Triggered Security Scan
+name: Build, Push and Scan with Harbor Webhook
 
 on:
+  push:
+    branches:
+      - main
   repository_dispatch:
     types: [harbor-webhook]
 
 jobs:
+  build-and-push:
+    if: github.event_name == 'push'
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Determine Project Type (Next.js or Django)
+        run: |
+          if [ -f "package.json" ]; then
+            echo "Detected Next.js project"
+            echo "IMAGE_NAME=front" >> $GITHUB_ENV
+          elif [ -f "manage.py" ]; then
+            echo "Detected Django project"
+            echo "IMAGE_NAME=back" >> $GITHUB_ENV
+          else
+            echo "ERROR: Could not determine project type"
+            exit 1
+          fi
+
+      - name: Generate Incremental Tag
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          NEW_TAG="1.$RUN_NUMBER"
+          echo "New Tag: $NEW_TAG"
+          echo "IMAGE_TAG=192.168.2.184/momo/$IMAGE_NAME:$NEW_TAG" >> $GITHUB_ENV
+
+      - name: Debug IMAGE_TAG
+        run: |
+          echo "IMAGE_TAG is set to: $IMAGE_TAG"
+
+      - name: Build and Push Docker Image to Harbor
+        env:
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          echo "$HARBOR_PASSWORD" | docker login -u "$HARBOR_USERNAME" --password-stdin 192.168.2.184
+          docker build -t $IMAGE_TAG .
+          docker push $IMAGE_TAG
+
   process-harbor-webhook:
+    if: github.event_name == 'repository_dispatch'
+    needs: build-and-push
     runs-on: self-hosted
 
     steps:
@@ -14,13 +61,16 @@ jobs:
           echo "Extracting data from Harbor Webhook payload..."
           cat $GITHUB_EVENT_PATH | jq '.'
           
-          IMAGE_NAME=$(cat $GITHUB_EVENT_PATH | jq -r '.event_data.resources[0].repository')
-          IMAGE_TAG=$(cat $GITHUB_EVENT_PATH | jq -r '.event_data.resources[0].tag')
+          IMAGE_NAME=$(jq -r '.event_data.resources[0].repository' $GITHUB_EVENT_PATH)
+          IMAGE_TAG=$(jq -r '.event_data.resources[0].tag' $GITHUB_EVENT_PATH)
           
-          if [[ -z "$IMAGE_NAME" || -z "$IMAGE_TAG" ]]; then
+          if [[ -z "$IMAGE_NAME" || "$IMAGE_NAME" == "null" || -z "$IMAGE_TAG" || "$IMAGE_TAG" == "null" ]]; then
             echo "ERROR: Could not extract image name or tag from Harbor Webhook"
             exit 1
           fi
+
+          echo "Extracted Image Name: $IMAGE_NAME"
+          echo "Extracted Image Tag: $IMAGE_TAG"
 
           echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
@@ -42,7 +92,12 @@ jobs:
         run: |
           echo "Fetching vulnerability scan results..."
           RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/$IMAGE_NAME/artifacts/$IMAGE_TAG?vulnerabilities=true")
-          
+
+          if [[ -z "$RESULT" || "$RESULT" == "null" ]]; then
+            echo "ERROR: Could not fetch scan results from Harbor"
+            exit 1
+          fi
+
           CRITICAL_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0] | add')
           HIGH_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0] | add')
 
