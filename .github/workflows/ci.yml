@@ -52,8 +52,7 @@ jobs:
 
   process-harbor-webhook:
     if: github.event_name == 'repository_dispatch'
-    needs: build-and-push
-    runs-on: self-hosted
+    runs-on: self-hosted  # 🔥 `needs: build-and-push` 제거 → 독립적으로 실행 가능
 
     steps:
       - name: Extract Harbor Webhook Data
