@@ -31,7 +31,7 @@ jobs:
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
-          docker login -u "$HARBOR_USERNAME" -p "$HARBOR_PASSWORD" 192.168.2.184
+          echo "$HARBOR_PASSWORD" | docker login -u "$HARBOR_USERNAME" --password-stdin 192.168.2.184
           docker build -t $IMAGE_TAG .
           docker push $IMAGE_TAG
 
