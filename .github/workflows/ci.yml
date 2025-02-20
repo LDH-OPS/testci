@@ -43,8 +43,7 @@ jobs:
         run: |
           echo "Scanning the pushed image: $IMAGE_TAG"
 
-      - name: Trigger Harbor Vulnerability Scan (Optional)
-        if: always()
+      - name: Trigger Harbor Vulnerability Scan
         env:
           HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
@@ -63,7 +62,13 @@ jobs:
         run: |
           echo "Waiting for scan results..."
           for i in {1..6}; do  # 최대 1분 (10초 x 6회) 대기
-            SCAN_STATUS=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG" | jq -r '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
+            RESPONSE=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG")
+
+            echo "Harbor API Response:"
+            echo "$RESPONSE" | jq .
+
+            SCAN_STATUS=$(echo "$RESPONSE" | jq -r '.[0].scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
+
             echo "Current scan status: $SCAN_STATUS"
             
             if [[ "$SCAN_STATUS" == "Success" ]]; then
@@ -86,8 +91,8 @@ jobs:
         run: |
           RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
           
-          CRITICAL_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
-          HIGH_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
+          CRITICAL_COUNT=$(echo "$RESULT" | jq '.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
+          HIGH_COUNT=$(echo "$RESULT" | jq '.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
 
           echo "Critical vulnerabilities: $CRITICAL_COUNT"
           echo "High vulnerabilities: $HIGH_COUNT"
