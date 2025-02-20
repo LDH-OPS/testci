@@ -23,10 +23,10 @@ jobs:
           echo "New Tag: $NEW_TAG"
           echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
 
-      # 3. Docker 로그인 및 이미지 빌드/푸시
+      # 3. Docker 로그인 및 이미지 빌드/푸시 (admin 계정 사용)
       - name: Build and Push Docker Image to Harbor
         env:
-          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_USERNAME: "admin"  # 관리자 계정 직접 사용
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
           docker login -u "$HARBOR_USERNAME" -p "$HARBOR_PASSWORD" 192.168.2.184
@@ -38,17 +38,17 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. 최신 Trivy 버전 설치 (sudo 문제 해결)
+      # 1. 최신 Trivy 버전 설치
       - name: Install Trivy
         run: |
-          apt-get update && apt-get install -y wget jq
+          sudo apt-get update && sudo apt-get install -y wget jq
           
           # Trivy 최신 버전 자동 다운로드
           TRIVY_LATEST_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
           wget https://github.com/aquasecurity/trivy/releases/download/$TRIVY_LATEST_VERSION/trivy_$(echo $TRIVY_LATEST_VERSION | sed 's/v//')_Linux-64bit.tar.gz
           
           tar -xvzf trivy_*.tar.gz
-          mv trivy /usr/local/bin/
+          sudo mv trivy /usr/local/bin/
 
       # 2. Trivy 취약점 검사 실행
       - name: Run Trivy Scan
