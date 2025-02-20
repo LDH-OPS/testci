@@ -13,13 +13,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Determine Project Type (Next.js or Django)
+        run: |
+          if [ -f "package.json" ]; then
+            echo "Detected Next.js project"
+            echo "IMAGE_NAME=front" >> $GITHUB_ENV
+          elif [ -f "manage.py" ]; then
+            echo "Detected Django project"
+            echo "IMAGE_NAME=back" >> $GITHUB_ENV
+          else
+            echo "ERROR: Could not determine project type"
+            exit 1
+          fi
+
       - name: Generate Incremental Tag
         env:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           NEW_TAG="1.$RUN_NUMBER"
           echo "New Tag: $NEW_TAG"
-          echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=192.168.2.184/momo/$IMAGE_NAME:$NEW_TAG" >> $GITHUB_ENV
 
       - name: Debug IMAGE_TAG
         run: |
@@ -51,7 +64,7 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           echo "Triggering scan for $IMAGE_TAG..."
-          curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
+          curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/$IMAGE_NAME/artifacts/$IMAGE_TAG/scan"
 
       - name: Wait for Scan to Complete (Polling - Faster)
         env:
@@ -62,7 +75,7 @@ jobs:
         run: |
           echo "Waiting for scan results..."
           for i in {1..6}; do  # 최대 1분 (10초 x 6회) 대기
-            RESPONSE=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG")
+            RESPONSE=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/$IMAGE_NAME/artifacts/$IMAGE_TAG")
 
             echo "Harbor API Response:"
             echo "$RESPONSE" | jq .
@@ -89,7 +102,7 @@ jobs:
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
+          RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/$IMAGE_NAME/artifacts/$IMAGE_TAG?vulnerabilities=true")
           
           CRITICAL_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0] | add')
           HIGH_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0] | add')
@@ -97,8 +110,6 @@ jobs:
           echo "Critical vulnerabilities: $CRITICAL_COUNT"
           echo "High vulnerabilities: $HIGH_COUNT"
 
-          # GitHub Actions 환경 변수에 강제 저장
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
           echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
 
