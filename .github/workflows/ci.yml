@@ -71,3 +71,70 @@ jobs:
           curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
           echo "Triggered scan for image: $IMAGE_TAG"
 
+      - name: Wait for Scan to Complete (Polling)
+        env:
+          HARBOR_URL: "https://192.168.2.184"
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          echo "Waiting for scan results..."
+          for i in {1..30}; do  # 최대 5분 (10초 x 30회) 대기
+            SCAN_STATUS=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG" | jq -r '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
+            echo "Current scan status: $SCAN_STATUS"
+            
+            if [[ "$SCAN_STATUS" == "Success" ]]; then
+              echo "Scan completed successfully!"
+              break
+            elif [[ "$SCAN_STATUS" == "Error" ]]; then
+              echo "Scan failed!"
+              exit 1
+            fi
+            
+            sleep 10
+          done
+
+      - name: Get Harbor Scan Results
+        env:
+          HARBOR_URL: "https://192.168.2.184"
+          HARBOR_USERNAME: "admin"
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
+          
+          CRITICAL_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
+          HIGH_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
+
+          echo "Critical vulnerabilities: $CRITICAL_COUNT"
+          echo "High vulnerabilities: $HIGH_COUNT"
+
+          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
+          echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
+
+      - name: Send Scan Report to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          HARBOR_URL: "https://192.168.2.184"
+          IMAGE_NAME: "momo/front"
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          MESSAGE="{
+            \"attachments\": [
+              {
+                \"color\": \"#ff0000\",
+                \"title\": \"🔍 Harbor Image Security Scan Report\",
+                \"fields\": [
+                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
+                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
+                ],
+                \"footer\": \"Harbor Trivy Scanner\",
+                \"ts\": $(date +%s)
+              }
+            ]
+          }"
+
+          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
+
