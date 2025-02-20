@@ -91,8 +91,8 @@ jobs:
         run: |
           RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
           
-          CRITICAL_COUNT=$(echo "$RESULT" | jq '.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
-          HIGH_COUNT=$(echo "$RESULT" | jq '.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
+          CRITICAL_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0] | add')
+          HIGH_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0] | add')
 
           echo "Critical vulnerabilities: $CRITICAL_COUNT"
           echo "High vulnerabilities: $HIGH_COUNT"
