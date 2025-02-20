@@ -41,96 +41,33 @@ jobs:
     steps:
       - name: Get Latest Image Tag from Harbor
         env:
-          HARBOR_URL: "192.168.2.184"
+          HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
           IMAGE_NAME: "momo/front"
         run: |
-          LATEST_TAG=$(curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts" | jq -r '.[0].tags[0].name')
-          
-          if [[ -z "$LATEST_TAG" ]]; then
+          RESPONSE=$(curl -k -L -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts")
+          echo "Harbor API Response:"
+          echo "$RESPONSE" | jq .
+
+          LATEST_TAG=$(echo "$RESPONSE" | jq -r 'map(select(.tags != null)) | .[0].tags[0].name')
+
+          if [[ -z "$LATEST_TAG" || "$LATEST_TAG" == "null" ]]; then
             echo "ERROR: Could not retrieve latest image tag!"
             exit 1
           fi
-          
+
           echo "Latest Image Tag: $LATEST_TAG"
           echo "IMAGE_TAG=$LATEST_TAG" >> $GITHUB_ENV
 
       - name: Trigger Harbor Vulnerability Scan
         env:
-          HARBOR_URL: "192.168.2.184"
+          HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
           IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-          curl -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
+          curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
           echo "Triggered scan for image: $IMAGE_TAG"
-
-      - name: Wait for Scan to Complete (Polling)
-        env:
-          HARBOR_URL: "192.168.2.184"
-          HARBOR_USERNAME: "admin"
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          echo "Waiting for scan results..."
-          for i in {1..30}; do
-            SCAN_STATUS=$(curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG" | jq -r '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
-            echo "Current scan status: $SCAN_STATUS"
-            
-            if [[ "$SCAN_STATUS" == "Success" ]]; then
-              echo "Scan completed successfully!"
-              break
-            elif [[ "$SCAN_STATUS" == "Error" ]]; then
-              echo "Scan failed!"
-              exit 1
-            fi
-            
-            sleep 10
-          done
-
-      - name: Get Harbor Scan Results
-        env:
-          HARBOR_URL: "192.168.2.184"
-          HARBOR_USERNAME: "admin"
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          RESULT=$(curl -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "http://$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
-          
-          CRITICAL_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0')
-          HIGH_COUNT=$(echo "$RESULT" | jq '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0')
-
-          echo "Critical vulnerabilities: $CRITICAL_COUNT"
-          echo "High vulnerabilities: $HIGH_COUNT"
-
-          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
-          echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
-
-      - name: Send Scan Report to Slack
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          HARBOR_URL: "192.168.2.184"
-          IMAGE_NAME: "momo/front"
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          MESSAGE="{
-            \"attachments\": [
-              {
-                \"color\": \"#ff0000\",
-                \"title\": \"🔍 Harbor Image Security Scan Report\",
-                \"fields\": [
-                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
-                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
-                ],
-                \"footer\": \"Harbor Trivy Scanner\",
-                \"ts\": $(date +%s)
-              }
-            ]
-          }"
-
-          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
 
