@@ -112,6 +112,7 @@ jobs:
                 \"color\": \"#ff0000\",
                 \"title\": \"🔍 Harbor Image Security Scan Report\",
                 \"fields\": [
+                  {\"title\": \"📦 Image\", \"value\": \"\`$IMAGE_TAG\`\", \"short\": false},
                   {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
                   {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
                 ],
