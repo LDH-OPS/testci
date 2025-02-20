@@ -26,9 +26,10 @@ jobs:
       # 3. Docker 로그인 및 이미지 빌드/푸시
       - name: Build and Push Docker Image to Harbor
         env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
-          docker login -u admin -p "$HARBOR_PASSWORD" 192.168.2.184
+          docker login -u "$HARBOR_USERNAME" -p "$HARBOR_PASSWORD" 192.168.2.184
           docker build -t $IMAGE_TAG .
           docker push $IMAGE_TAG
 
@@ -37,18 +38,25 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      # 1. 최신 Trivy 버전 설치 (sudo 문제 해결)
       - name: Install Trivy
         run: |
-          sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.45.1_Linux-64bit.tar.gz
-          tar -xvzf trivy_0.45.1_Linux-64bit.tar.gz
-          sudo mv trivy /usr/local/bin/
+          apt-get update && apt-get install -y wget jq
+          
+          # Trivy 최신 버전 자동 다운로드
+          TRIVY_LATEST_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
+          wget https://github.com/aquasecurity/trivy/releases/download/$TRIVY_LATEST_VERSION/trivy_$(echo $TRIVY_LATEST_VERSION | sed 's/v//')_Linux-64bit.tar.gz
+          
+          tar -xvzf trivy_*.tar.gz
+          mv trivy /usr/local/bin/
 
+      # 2. Trivy 취약점 검사 실행
       - name: Run Trivy Scan
         run: |
           trivy image --format json --output trivy-report.json $IMAGE_TAG
           cat trivy-report.json
 
+      # 3. 취약점 검사 결과 Slack 알림 전송
       - name: Send Report to Slack
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
