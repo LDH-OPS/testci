@@ -39,48 +39,30 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Get Latest Image Tag from Harbor
-        env:
-          HARBOR_URL: "https://192.168.2.184"
-          HARBOR_USERNAME: "admin"
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
+      - name: Debug IMAGE_TAG (확인용)
         run: |
-          RESPONSE=$(curl -k -L -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts")
-          echo "Harbor API Response:"
-          echo "$RESPONSE" | jq .
+          echo "Scanning the pushed image: $IMAGE_TAG"
 
-          LATEST_TAG=$(echo "$RESPONSE" | jq -r 'map(select(.tags != null)) | .[0].tags[0].name')
-
-          if [[ -z "$LATEST_TAG" || "$LATEST_TAG" == "null" ]]; then
-            echo "ERROR: Could not retrieve latest image tag!"
-            exit 1
-          fi
-
-          echo "Latest Image Tag: $LATEST_TAG"
-          echo "IMAGE_TAG=$LATEST_TAG" >> $GITHUB_ENV
-
-      - name: Trigger Harbor Vulnerability Scan
+      - name: Trigger Harbor Vulnerability Scan (Optional)
+        if: always()
         env:
           HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
+          echo "Triggering scan for $IMAGE_TAG..."
           curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
-          echo "Triggered scan for image: $IMAGE_TAG"
 
-      - name: Wait for Scan to Complete (Polling)
+      - name: Wait for Scan to Complete (Polling - Faster)
         env:
           HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           echo "Waiting for scan results..."
-          for i in {1..30}; do  # 최대 5분 (10초 x 30회) 대기
+          for i in {1..6}; do  # 최대 1분 (10초 x 6회) 대기
             SCAN_STATUS=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG" | jq -r '.scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
             echo "Current scan status: $SCAN_STATUS"
             
@@ -92,7 +74,7 @@ jobs:
               exit 1
             fi
             
-            sleep 10
+            sleep 10  # 10초 대기 후 다시 확인
           done
 
       - name: Get Harbor Scan Results
@@ -100,7 +82,6 @@ jobs:
           HARBOR_URL: "https://192.168.2.184"
           HARBOR_USERNAME: "admin"
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
@@ -118,7 +99,6 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           HARBOR_URL: "https://192.168.2.184"
-          IMAGE_NAME: "momo/front"
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           MESSAGE="{
