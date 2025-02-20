@@ -38,17 +38,20 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      # 1. 최신 Trivy 버전 설치
+      # 1. Trivy 설치 (sudo -S 옵션 사용하여 비밀번호 자동 입력)
       - name: Install Trivy
+        env:
+          RUNNER_PASSWORD: ${{ secrets.RUNNER_PASSWORD }}  # GitHub Secrets에서 비밀번호 가져오기
         run: |
-          sudo apt-get update && sudo apt-get install -y wget jq
+          echo "$RUNNER_PASSWORD" | sudo -S apt-get update
+          echo "$RUNNER_PASSWORD" | sudo -S apt-get install -y wget jq
           
           # Trivy 최신 버전 자동 다운로드
           TRIVY_LATEST_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | jq -r .tag_name)
           wget https://github.com/aquasecurity/trivy/releases/download/$TRIVY_LATEST_VERSION/trivy_$(echo $TRIVY_LATEST_VERSION | sed 's/v//')_Linux-64bit.tar.gz
           
           tar -xvzf trivy_*.tar.gz
-          sudo mv trivy /usr/local/bin/
+          echo "$RUNNER_PASSWORD" | sudo -S mv trivy /usr/local/bin/
 
       # 2. Trivy 취약점 검사 실행
       - name: Run Trivy Scan
