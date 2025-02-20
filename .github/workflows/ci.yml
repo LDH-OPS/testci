@@ -97,6 +97,8 @@ jobs:
           echo "Critical vulnerabilities: $CRITICAL_COUNT"
           echo "High vulnerabilities: $HIGH_COUNT"
 
+          # GitHub Actions 환경 변수에 강제 저장
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
           echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
           echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
 
@@ -108,9 +110,6 @@ jobs:
         run: |
           # 디버깅: IMAGE_TAG 값 확인
           echo "DEBUG: IMAGE_TAG before Slack message: $IMAGE_TAG"
-          
-          # GitHub Actions 환경 변수에 강제 설정
-          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
           MESSAGE="{
             \"attachments\": [
