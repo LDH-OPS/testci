@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Calendar, { CalendarProps } from "react-calendar";
 import dayjs from "dayjs";
+import styles from "@/styles/MainForm.module.css";
 
 interface CalendarFormProps {
   onDateSelect: (date: Date) => void;
@@ -36,22 +37,51 @@ export default function CalendarForm({
   };
 
   return (
-    <div className="calendarContainer">
+    <div className={styles.calendarContainer}>
       {" "}
       {/* ✅ 전역 CSS 적용 */}
       <Calendar
         onChange={handleDateChange}
         onActiveStartDateChange={handleActiveStartDateChange} // ✅ 월 변경 감지
-        className={"react-calendar"}
+        className="react-calendar"
         locale="ko-KR"
         calendarType="gregory"
+        showFixedNumberOfWeeks={false}
         formatShortWeekday={(locale, date) =>
           ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][date.getDay()]
         }
-        prev2Label="≪"
-        prevLabel="＜"
-        nextLabel="＞"
-        next2Label="≫"
+        prev2Label={
+          <img
+            src="/calendar/pre_year.png"
+            alt="이전 년"
+            width="20"
+            height="20"
+          />
+        }
+        prevLabel={
+          <img
+            src="/calendar/left-arrow.png"
+            alt="이전 달"
+            width="20"
+            height="20"
+          />
+        }
+        nextLabel={
+          <img
+            src="/calendar/right-arrow.png"
+            alt="다음 달"
+            width="20"
+            height="20"
+          />
+        }
+        next2Label={
+          <img
+            src="/calendar/next_year.png"
+            alt="다음 년"
+            width="20"
+            height="20"
+          />
+        }
         formatDay={(locale, date) => date.getDate().toString()}
         tileClassName={({ date }) => {
           const dateKey = dayjs(date).format("YYYY-MM-DD");
