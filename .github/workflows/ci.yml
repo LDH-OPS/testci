@@ -23,7 +23,7 @@ jobs:
           NEW_TAG="1.$RUN_NUMBER"
           
           echo "New Tag: $NEW_TAG"
-          echo "IMAGE_TAG=192.168.2.184/momo/citest:$NEW_TAG" >> $GITHUB_ENV
+          echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
 
       # 3. Docker 로그인 및 이미지 빌드/푸시
       - name: Build and Push Docker Image to Harbor
