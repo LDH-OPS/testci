@@ -19,9 +19,7 @@ jobs:
         env:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          # 실행 횟수를 기반으로 태그 설정 (1.0, 1.1, 1.2 ...)
           NEW_TAG="1.$RUN_NUMBER"
-          
           echo "New Tag: $NEW_TAG"
           echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
 
@@ -33,4 +31,45 @@ jobs:
           docker login -u admin -p "$HARBOR_PASSWORD" 192.168.2.184
           docker build -t $IMAGE_TAG .
           docker push $IMAGE_TAG
+
+  vulnerability-scan:
+    needs: build-and-push
+    runs-on: self-hosted
+
+    steps:
+      - name: Install Trivy
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.45.1_Linux-64bit.tar.gz
+          tar -xvzf trivy_0.45.1_Linux-64bit.tar.gz
+          sudo mv trivy /usr/local/bin/
+
+      - name: Run Trivy Scan
+        run: |
+          trivy image --format json --output trivy-report.json $IMAGE_TAG
+          cat trivy-report.json
+
+      - name: Send Report to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          HIGH_COUNT=$(jq '[.Results[].Vulnerabilities[] | select(.Severity == "HIGH")] | length' trivy-report.json)
+          CRITICAL_COUNT=$(jq '[.Results[].Vulnerabilities[] | select(.Severity == "CRITICAL")] | length' trivy-report.json)
+
+          MESSAGE="{
+            \"attachments\": [
+              {
+                \"color\": \"#ff0000\",
+                \"title\": \"🔍 Harbor Image Security Scan Report\",
+                \"fields\": [
+                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
+                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
+                ],
+                \"footer\": \"Security Bot\",
+                \"ts\": $(date +%s)
+              }
+            ]
+          }"
+
+          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
 
