@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
 
   if (!date) {
-    return NextResponse.json({ error: "날짜가 필요합니다." }, { status: 400 });
+    return NextResponse.json({ error: "날짜가 필요합니다" }, { status: 400 });
   }
 
   // ✅ 쿠키에서 idToken 가져오기
