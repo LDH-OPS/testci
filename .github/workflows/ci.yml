@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to Harbor
+name: Build and Push Docker
 
 on:
   push:
@@ -13,11 +13,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Generate Incremental Tag
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
+      - name: Generate Incremental Tag (Starting from 1.1)
         run: |
-          NEW_TAG="1.$RUN_NUMBER"
+          # 기존 이미지 태그 확인
+          EXISTING_TAGS=$(docker images 192.168.2.184/momo/front --format "{{.Tag}}" | grep -E '^1\.[0-9]+$' | sort -V | tail -n1)
+
+          # 최초 실행이라면 1.1로 시작
+          if [ -z "$EXISTING_TAGS" ]; then
+            NEW_TAG="1.1"
+          else
+            # 기존 태그에서 버전 증가 (1.x -> 1.(x+1))
+            NEW_TAG=$(echo "$EXISTING_TAGS" | awk -F. '{print $1"."$2+1}')
+          fi
+
           echo "New Tag: $NEW_TAG"
           echo "IMAGE_TAG=192.168.2.184/momo/front:$NEW_TAG" >> $GITHUB_ENV
 
@@ -70,7 +78,7 @@ jobs:
             SCAN_STATUS=$(echo "$RESPONSE" | jq -r '.[0].scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
 
             echo "Current scan status: $SCAN_STATUS"
-            
+
             if [[ "$SCAN_STATUS" == "Success" ]]; then
               echo "Scan completed successfully!"
               break
@@ -78,7 +86,7 @@ jobs:
               echo "Scan failed!"
               exit 1
             fi
-            
+
             sleep 10  # 10초 대기 후 다시 확인
           done
 
@@ -90,7 +98,7 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
-          
+
           CRITICAL_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0] | add')
           HIGH_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0] | add')
 
