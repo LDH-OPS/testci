@@ -1,4 +1,4 @@
-name: Build and Push Docker
+name: Build and Push Docker Image to Harbor
 
 on:
   push:
@@ -47,10 +47,6 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Debug IMAGE_TAG (확인용)
-        run: |
-          echo "Scanning the pushed image: $IMAGE_TAG"
-
       - name: Trigger Harbor Vulnerability Scan
         env:
           HARBOR_URL: "https://192.168.2.184"
@@ -59,75 +55,10 @@ jobs:
           IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
           echo "Triggering scan for $IMAGE_TAG..."
-          curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
+          curl -k -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+            -X POST "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG/scan"
 
-      - name: Wait for Scan to Complete (Polling - Faster)
-        env:
-          HARBOR_URL: "https://192.168.2.184"
-          HARBOR_USERNAME: "admin"
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+      - name: Notify via Harbor Webhook (Slack)
         run: |
-          echo "Waiting for scan results..."
-          for i in {1..6}; do  # 최대 1분 (10초 x 6회) 대기
-            RESPONSE=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG")
-
-            echo "Harbor API Response:"
-            echo "$RESPONSE" | jq .
-
-            SCAN_STATUS=$(echo "$RESPONSE" | jq -r '.[0].scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].scan_status')
-
-            echo "Current scan status: $SCAN_STATUS"
-
-            if [[ "$SCAN_STATUS" == "Success" ]]; then
-              echo "Scan completed successfully!"
-              break
-            elif [[ "$SCAN_STATUS" == "Error" ]]; then
-              echo "Scan failed!"
-              exit 1
-            fi
-
-            sleep 10  # 10초 대기 후 다시 확인
-          done
-
-      - name: Get Harbor Scan Results
-        env:
-          HARBOR_URL: "https://192.168.2.184"
-          HARBOR_USERNAME: "admin"
-          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          RESULT=$(curl -k -s -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" "$HARBOR_URL/api/v2.0/projects/momo/repositories/front/artifacts/$IMAGE_TAG?vulnerabilities=true")
-
-          CRITICAL_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.Critical // 0] | add')
-          HIGH_COUNT=$(echo "$RESULT" | jq '[.[] | .scan_overview["application/vnd.scanner.adapter.vuln.report.harbor+json; version=1.0"].summary.High // 0] | add')
-
-          echo "Critical vulnerabilities: $CRITICAL_COUNT"
-          echo "High vulnerabilities: $HIGH_COUNT"
-
-          echo "CRITICAL_COUNT=$CRITICAL_COUNT" >> $GITHUB_ENV
-          echo "HIGH_COUNT=$HIGH_COUNT" >> $GITHUB_ENV
-
-      - name: Send Scan Report to Slack
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          HARBOR_URL: "https://192.168.2.184"
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        run: |
-          MESSAGE="{
-            \"attachments\": [
-              {
-                \"color\": \"#ff0000\",
-                \"title\": \"🔍 Harbor Image Security Scan Report\",
-                \"fields\": [
-                  {\"title\": \"🛑 Critical\", \"value\": \"$CRITICAL_COUNT\", \"short\": true},
-                  {\"title\": \"⚠️ High\", \"value\": \"$HIGH_COUNT\", \"short\": true}
-                ],
-                \"footer\": \"Harbor Trivy Scanner\",
-                \"ts\": $(date +%s)
-              }
-            ]
-          }"
-
-          curl -X POST -H 'Content-type: application/json' --data "$MESSAGE" $SLACK_WEBHOOK_URL
+          echo "Slack notification will be handled by Harbor's webhook configuration."
 
